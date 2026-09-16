@@ -6,11 +6,11 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 
 
-# Load variables from .env
+# Load the .env file
 load_dotenv()
 
 
-# Page settings
+# Streamlit page settings
 st.set_page_config(
     page_title="PULLUP",
     page_icon="🫵",
@@ -24,12 +24,13 @@ st.subheader("Your group chat, but actually useful.")
 st.caption("Tell me the vibe. I'll turn the chaos into a plan. 💀")
 
 
-# API key
+# Read Google API key
 api_key = os.getenv("GOOGLE_API_KEY")
 
 if not api_key:
     st.error(
-        "Missing GOOGLE_API_KEY. Add it to your .env file and restart the app."
+        "Missing GOOGLE_API_KEY. Add GOOGLE_API_KEY to your .env file "
+        "and restart the app."
     )
     st.stop()
 
@@ -42,13 +43,13 @@ llm = ChatGoogleGenerativeAI(
 )
 
 
-# Sidebar inputs
+# Sidebar
 with st.sidebar:
     st.header("👯 Your squad")
 
     people = st.text_area(
         "Who's coming?",
-        "Aisha, Rohan, Simran, Me"
+        value="Aisha, Rohan, Simran, Me"
     )
 
     budget = st.number_input(
@@ -60,7 +61,7 @@ with st.sidebar:
 
     city = st.text_input(
         "📍 City",
-        "Bengaluru"
+        value="Bengaluru"
     )
 
     vibe = st.selectbox(
@@ -77,21 +78,24 @@ with st.sidebar:
 
     time_available = st.text_input(
         "⏰ Time",
-        "6 PM – 11 PM"
+        value="6 PM – 11 PM"
     )
 
 
-# Main request
+# Main request area
 st.markdown("### What's the plan?")
 
 request = st.text_area(
     "💬 Tell PULLUP what's going on",
-    placeholder="bro we're bored, 4 people are free, we have ₹800 each..."
+    placeholder=(
+        "bro we're bored, 4 people are free, "
+        "we have ₹800 each..."
+    )
 )
 
 
 # Quick request options
-quick = st.selectbox(
+quick_request = st.selectbox(
     "Or pick one 👇",
     [
         "Choose...",
@@ -103,32 +107,50 @@ quick = st.selectbox(
     ]
 )
 
+if quick_request != "Choose..." and not request.strip():
+    request = quick_request
 
-if quick != "Choose..." and not request:
-    request = quick
+
+# One unique button only
+generate_clicked = st.button(
+    "PULL US UP 🚀",
+    use_container_width=True,
+    key="pullup_generate_button"
+)
 
 
-# Generate plan
-if st.button("PULL US UP 🚀", use_container_width=True) and request:
+if generate_clicked:
 
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            (
-                "system",
-                """
+    if not request.strip():
+        st.warning("Please tell PULLUP what is going on first.")
+
+    else:
+
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    """
 You are PULLUP, a Gen-Z group-planning AI.
 
-Turn messy group-chat energy into a realistic plan.
+Turn messy group-chat energy into a realistic and useful plan.
 
 Be fun, concise and natural. Use light Gen-Z language,
 but do not overdo slang.
 
 Never invent exact live prices, opening hours, availability,
-bookings, addresses, or facts that are not provided by the user.
+bookings, addresses, or facts that were not provided by the user.
 
-If current details are needed, clearly say that they should be checked.
+If current details are needed, clearly say that the user
+should check them before going.
 
-Return the answer in clean Markdown with exactly these sections:
+Return only clean, human-readable Markdown.
+
+Do not return JSON.
+Do not return Python objects.
+Do not include fields such as type, text, extras, svg, or signature.
+
+Use exactly these sections:
 
 ## Verdict
 One fun one-line verdict.
@@ -137,7 +159,7 @@ One fun one-line verdict.
 A practical plan with times.
 
 ## Estimated Budget
-Estimated spending per person. Clearly label estimates.
+Estimated spending per person. Clearly label all estimates.
 
 ## Backup Plan
 One alternative plan.
@@ -146,14 +168,12 @@ One alternative plan.
 A short message the user can copy and paste.
 
 Use the supplied city, people, budget, vibe and time window.
-Do not return JSON.
-Do not include fields such as type, text, extras, svg, or signature.
-Return only the final human-readable Markdown answer.
+Stay within the user's budget where possible.
 """
-            ),
-            (
-                "human",
-                """
+                ),
+                (
+                    "human",
+                    """
 CITY: {city}
 
 PEOPLE: {people}
@@ -166,46 +186,55 @@ TIME: {time_available}
 
 REQUEST: {request}
 """
-            )
-        ]
-    )
-
-    with st.spinner("Cooking the plan... 🍳"):
-
-        chain = prompt | llm
-
-        result = chain.invoke(
-            {
-                "city": city,
-                "people": people,
-                "budget": budget,
-                "vibe": vibe,
-                "time_available": time_available,
-                "request": request
-            }
+                )
+            ]
         )
 
-    st.markdown("## 🧃 PULLUP says:")
+        with st.spinner("Cooking the plan... 🍳"):
 
-    # Extract the actual text from Gemini's response
-    answer = result.content
+            chain = prompt | llm
 
-    if isinstance(answer, list) and len(answer) > 0:
-        first_item = answer[0]
+            result = chain.invoke(
+                {
+                    "city": city,
+                    "people": people,
+                    "budget": budget,
+                    "vibe": vibe,
+                    "time_available": time_available,
+                    "request": request
+                }
+            )
 
-        if isinstance(first_item, dict):
-            answer = first_item.get("text", "")
+        st.markdown("## 🧃 PULLUP says:")
+
+        # Extract only the actual text from the model response
+        answer = result.content
+
+        if isinstance(answer, list):
+
+            text_parts = []
+
+            for item in answer:
+
+                if isinstance(item, dict):
+                    text_value = item.get("text", "")
+
+                    if text_value:
+                        text_parts.append(str(text_value))
+
+                elif isinstance(item, str):
+                    text_parts.append(item)
+
+            answer = "\n\n".join(text_parts)
+
+        elif isinstance(answer, dict):
+            answer = answer.get("text", "")
+
         else:
-            answer = str(first_item)
+            answer = str(answer)
 
-    elif isinstance(answer, dict):
-        answer = answer.get("text", "")
+        if not answer.strip():
+            st.error("PULLUP returned an empty response. Please try again.")
 
-    else:
-        answer = str(answer)
-
-    # Display only the actual answer
-    st.markdown(answer)
-
-elif st.button("PULL US UP 🚀", use_container_width=True):
-    st.warning("Please tell PULLUP what is going on first.")
+        else:
+            st.markdown(answer)
